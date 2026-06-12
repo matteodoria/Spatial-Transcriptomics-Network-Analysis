@@ -1,0 +1,75 @@
+% ============================================================
+%   §8 Methods
+% ============================================================
+\section{Methods}
+\label{sec:methods}
+
+This section collects the technical details deferred from the narrative Parts, organised by stage of the pipeline. The goal is to make the work reproducible from the cached artefacts and source modules without requiring the reader to re-derive design decisions from the codebase.
+
+\subsection*{Data and access}
+
+The dataset is provided as a Zarr v3 store. Each cell carries: a 2D spatial position, a sample identifier (0--111), a patient identifier (0--55), a cell-type label (0--7), a 1000-dimensional HVG expression vector (selected per the procedure below), a 1280-dimensional UNI \cite{uni2024} H\&E embedding, four morphology scalar features, and a binary \texttt{train\_mask} flag. The total cell count is $8{,}065{,}561$ across $112$ samples; $66{,}796$ cells are isolated (no spatial neighbours within the cap radius) and are dropped from spatial-graph-based analysis. All Zarr access uses the \texttt{oindex} API; cells are loaded in chunks of $\sim 10^5$ at a time to bound peak memory.
+
+The canonical patient split is fixed once and persisted to \texttt{cache/splits/patient\_split.json}. It is generated with random seed 42 from the full 56-patient pool: $40$ training patients, $8$ validation, $8$ test. Test patients are $\{0, 21, 26, 28, 34, 40, 45, 51\}$. This split is loaded at the beginning of every notebook and every training script, ensuring that no analysis is computed on test patients except for the final evaluation in \S\ref{sec:part3_test}.
+
+\subsection*{Spatial graph construction}
+
+For each sample I compute a symmetric $k$-nearest-neighbour graph with $k = 8$ in 2D Euclidean space, then cap edges at a per-sample radius threshold computed as $1.5\times$ the 99th-percentile nearest-neighbour distance in that sample. The cap removes edges that bridge tissue gaps in fragmented samples; it has no effect on dense compact samples. The resulting graph is symmetrised: an edge $(i,j)$ is kept if $j$ is among $i$'s $k$ nearest within the cap, or $i$ is among $j$'s. The implementation uses scikit-learn's \texttt{BallTree} for the KNN query, then constructs the edge index with NumPy operations. Per-sample subgraphs are cached as \texttt{.npz} files under \texttt{cache/per\_sample/}.
+
+\subsection*{Topology metrics}
+
+The free-tier metrics are computed with \texttt{python-igraph} on the per-sample subgraph. They include: mean degree, fraction of isolated cells, fraction of cells in the largest connected component, number of connected components of size $\geq 100$, global transitivity, mean local clustering coefficient, degree assortativity, and cell-type assortativity. Anomaly detection flags a sample as anomalous if mean degree $< 4$ AND fraction of isolated nodes $> 0.35$ AND largest-component fraction $< 0.1$. Two samples (\#87, \#107) match all three criteria.
+
+The expensive tier (closeness and betweenness centrality) is computed on the giant connected component using \texttt{igraph}'s \texttt{betweenness} with source/target sampling \cite{brandes2007centrality}. I use $5{,}000$ source nodes uniformly sampled from the giant component (no cutoff distance), which produces stable centrality rankings on a graph of size $\sim 40{,}000$ at a fraction of the cost of full computation. Closeness is similarly computed on the giant component with full source-target enumeration (this is cheaper than betweenness on the same graph). Ten representative samples form the expensive-tier subset; the per-node arrays are not persisted by default and are recomputed when needed for figures.
+
+\subsection*{Niche detection}
+
+Per-sample Leiden \cite{traag2019leiden} is run with \texttt{leidenalg} on the weighted giant-component subgraph. Edge weights are $\exp(-\|x_i - x_j\|^2 / 2\sigma^2)$ where $x_i, x_j$ are the HVG expression vectors and $\sigma$ is the median pairwise distance among the edge endpoints in that sample. The resolution parameter is $\gamma = 0.5$ for the Reichardt--Bornholdt partition modularity, selected from a sweep over $\{0.3, 0.5, 0.7, 1.0\}$ on three representative samples (\#2, \#47, \#83) using intra-cluster composition homogeneity as the criterion. Random seed for each Leiden run is the sample index.
+
+Cross-sample alignment is performed by hierarchical clustering on the per-community composition vectors. I retain communities with at least $100$ cells (9{,}457 of 11{,}496 non-anomaly communities) to ensure that the composition vector is statistically reliable. The clustering uses Ward linkage \cite{murtagh2014ward} with Euclidean distance on the 8-dimensional composition vectors. The number of niches $K = 20$ is chosen as the smallest $K$ at which all clusters have median intra-cluster cosine distance $\leq 0.15$, ensuring compositional purity. Niche labels are assigned by mapping each community to its cluster and propagated to all cells in the community. Cells in communities below the 100-cell threshold remain unassigned (niche label $-1$).
+
+\subsection*{HVG selection and modality standardisation}
+
+The 1000 highly variable genes used in Parts \ref{sec:part3}--\ref{sec:part5} are selected with the Seurat criterion as implemented in scanpy \cite{wolf2018scanpy} (function \texttt{highly\_variable\_genes} with \texttt{flavor='seurat'}). Selection is performed on training cells only, on log-normalised expression. The output index is cached at \texttt{cache/preprocessing/hvg\_indices.npy}.
+
+Per-modality standardisation uses training-cell statistics only. HVG expression is z-scored gene-wise in a chunked pass to avoid loading the full $1.4 \times 10^6 \times 1000$ training-cell matrix at once. H\&E embeddings are similarly z-scored dimension-wise. Morphology features are z-scored on the four scalar dimensions. All standardisation parameters (mean, std) are persisted to \texttt{cache/preprocessing/} for reproducible inference on validation and test sets.
+
+\subsection*{GNN training}
+
+The GNN implementations are in PyTorch Geometric \cite{fey2019pyg}. GraphSAGE uses two convolution layers of hidden dimension $256$ with mean aggregation; GAT uses two layers, $4$ attention heads, $64$ hidden dimensions per head. Both have dropout $0.2$ on intermediate activations. Modality-specific encoders (used in Rungs 2, 4, 5) project each modality to $256$ dimensions before concatenation; the head is a single linear layer to $8$ logits.
+
+Training is performed with \texttt{NeighborLoader} from PyG, using $[20, 20]$ neighbours per layer (capped 2-hop sampling). Batch size is $2048$ during training and $4096$ during evaluation. Optimisation uses Adam with learning rate $10^{-3}$, weight decay $10^{-4}$, and 20 maximum epochs with early stopping (patience 3) on validation macro-$F_1$. Training is run on a single NVIDIA A40 (24GB) and takes 5--30 minutes per rung depending on architecture. Per-rung pickles are saved to \texttt{cache/models/} with full history, best state, and final-epoch validation and test predictions.
+
+For Rungs 1 (logistic regression) and 2 (multi-modal MLP), I use the same training/validation/test split and HVG selection but skip the spatial-graph data loading. Rung 1 uses scikit-learn's \texttt{LogisticRegression} with $L_2$ penalty and \texttt{lbfgs} solver, fit on the full training set in one pass. Rung 2 is an MLP with the same per-modality encoders as the GNN rungs but no graph convolution; it is trained with the same Adam setup as the GNN rungs.
+
+The modality-masking analysis on Rung 2 zeroes out a modality's output at inference time and recomputes validation $F_1$ on the entire validation set. The reported $\Delta F_1$ values are differences from the unmasked Rung 2 baseline.
+
+\subsection*{Graphical Lasso fitting}
+
+A property of high-resolution spatial transcriptomics relevant to Parts \ref{sec:part4}--\ref{sec:part5} is mRNA diffusion contamination: at Visium HD resolution, transcripts assigned to a target cell partially originate from cells within $\sim 1$--$2$ neighbours of it. I do not apply a deconvolution correction to the expression vectors before fitting the Graphical Lasso; instead, I read the resulting conditional-dependence networks as \emph{microenvironmental gene programmes} that mix cell-intrinsic regulation with neighbourhood signal, and incorporate this framing into the biological interpretation throughout Parts \ref{sec:part4}--\ref{sec:part5} and the Discussion. The decision to fit the GGM on uncorrected expression is deliberate --- the diffusion-aware reading of the networks is informative in itself --- and the validation of cell-type identities against canonical marker-gene expression patterns confirms that the canonical markers are present in each class, even where the GGM hubs are dominated by neighbourhood signal.
+
+A second known limitation of the Graphical Lasso on count-based data is the multivariate Gaussian assumption, which spatial-transcriptomics expression vectors do not satisfy (zero-inflation, right-skew, mean-dependent variance). The common-gene restriction (per-gene std $> 0.05$ in every cell-type class) selects genes with sufficiently rich variability across cells that the marginal distributions, after log-normalisation, are less degenerate than the typical scRNA-seq gene; this is the practical mitigation. The principled alternative is the nonparanormal SKEPTIC estimator \cite{liu2012nonparanormal}, which replaces sample correlations with rank-based correlations (Kendall's $\tau$ or Spearman's $\rho$) and is consistent under arbitrary continuous marginal transformations. I do not apply it in this report and acknowledge it as the more defensible estimator for any extension that derives quantitative conclusions from the precision-matrix entries.
+
+For Parts \ref{sec:part4}--\ref{sec:part5} the Graphical Lasso is fit with scikit-learn's \texttt{GraphicalLasso} (with \texttt{max\_iter=200} and default tolerance $10^{-4}$). The input to each fit is the log-normalised expression of $5{,}000$ subsampled cells, restricted to the 378 common genes. The common-gene subset is the genes among the 1000 HVGs whose per-gene standard deviation exceeds $0.05$ in \emph{every} cell-type class.
+
+Per-class fits in \partref{4} use patient-stratified sampling: cells are drawn proportionally from each training patient that contributes at least 50 cells of that class. Per-niche fits in \partref{5} use the same protocol on the niche assignment. \nicheid{15} has training data from only 7 patients, which I flag as a caveat. Random seed for subsampling is fixed per niche/class (the niche/class index) for reproducibility.
+
+Within each fit, genes with standard deviation below $10^{-6}$ on the subsample are dropped before passing to the estimator (these are genes that are broadly variable across the cohort but happen to be silent in this particular niche or class subsample, e.g.\ class-specific markers in classes that don't express them). After fitting, the resulting precision matrix is re-expanded to the original $378 \times 378$ shape with identity diagonal on the excluded rows/columns, so all networks share a common gene-space index for pairwise comparison.
+
+The $\alpha = 0.07$ choice is the result of a sweep over $\{0.05, 0.07, 0.097, 0.136, 0.189, 0.264, 0.368, 0.514, 0.717, 1.0\}$ on SMC (\classid{5}) and Tumor cells (\classid{7}), chosen as two biologically distant classes (mesenchymal/vascular vs.\ epithelial/tumour) for the calibration. The criterion was edge sparsity near $1\%$ of $\binom{378}{2}$ combined with biological hub interpretability. The sweep was performed once and the resulting $\alpha$ is reused across all subsequent fits.
+
+\subsection*{Bootstrap stability for GGMs}
+
+The bootstrap stability analysis in \partref{4} re-fits each per-class GGM on 10 bootstrap resamples of the original 5000-cell subsample, drawn with replacement. For each bootstrap, I record the top-15 hub gene identities and the edge set at $\alpha = 0.07$. Stability of a hub gene is the coefficient of variation of its degree across bootstraps (lower is more stable); stability of an edge is the fraction of bootstraps in which it appears. The bootstrap pickles are stored at \texttt{cache/ggm/bootstraps\_alpha\_007\_common378.pkl}.
+
+\subsection*{Cross-niche similarity measures}
+
+In \partref{5}, the three pairwise similarity matrices over the 20 niches are computed as follows. Edge Jaccard is $|E_a \cap E_b| / |E_a \cup E_b|$ where $E_a, E_b$ are the off-diagonal non-zero entries of the precision matrices of niches $a$ and $b$. Hub Jaccard is the analogous formula on the top-15 hub gene sets (top by degree). Composition cosine is the cosine similarity of the 8-dimensional cell-type composition vectors of the two niches. Patient-set Jaccard is the Jaccard overlap of the sets of patients containing at least one cell of that niche.
+
+Hierarchical clustering on each matrix uses average linkage on the distance matrix $1 - S$ (where $S$ is the similarity matrix); for composition cosine the distance is $1 - \cos$. The dendrograms are cut at $K = 8$ to compare against the 8 cell-class-dominant family partition from \partref{2}, using the Adjusted Rand Index \cite{hubert1985ari}.
+
+\subsection*{Computing environment and caching}
+
+All computations were run on a single workstation with an NVIDIA A40 GPU (24GB), 134GB of system RAM, and a 250GB home filesystem (with overflow to a 466GB local scratch directory). Python 3.12, PyTorch 2.12 with CUDA 13, PyTorch Geometric with \texttt{torch\_sparse} and \texttt{torch\_scatter} (no \texttt{pyg-lib} due to wheel unavailability for this Torch/CUDA combination). Per-niche GNN cohort caches ($\sim 100$GB total) are symlinked from the home directory to local scratch.
+
+Caching is hierarchical: \texttt{cache/global/} holds the cohort-wide arrays (cell positions, classes, samples, patients, train mask) re-stored as memory-mapped NumPy files; \texttt{cache/per\_sample/sample\_NNN.npz} holds per-sample spatial subgraphs; \texttt{cache/topology/}, \texttt{cache/communities/}, \texttt{cache/preprocessing/}, \texttt{cache/models/}, \texttt{cache/ggm/}, \texttt{cache/ggm\_niches/} hold the artefacts of each Part. Most cells in the analysis notebooks load from cache rather than recomputing; the only routine that runs end-to-end on every report build is the figure generation script in \texttt{scripts/generate\_report\_figures.py}.

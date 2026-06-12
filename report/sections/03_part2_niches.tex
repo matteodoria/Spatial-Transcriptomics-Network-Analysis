@@ -1,0 +1,73 @@
+% ============================================================
+%   §3 Part 2: niche detection
+% ============================================================
+\section{Niche detection}
+\label{sec:part2}
+
+\partref{1} examined the spatial graph at the cohort level. \partref{2} steps inside each sample to ask whether the tissue organises into recurrent microenvironments --- spatial regions with a characteristic cell-type composition that reappear across patients. If such niches exist and are stable across the cohort, they provide a coarser, more biologically interpretable level of structure than individual cells, and a natural unit on which to anchor the downstream analyses in Parts \ref{sec:part3}--\ref{sec:part5}.
+
+\subsection*{Per-sample communities and cross-sample alignment}
+
+Within each sample I run the Leiden algorithm \cite{traag2019leiden} with resolution parameter $\gamma = 0.5$ on the weighted giant-component subgraph, where edge weights derive from cell--cell expression similarity. Resolution 0.5 was selected after a small sweep on three representative samples: lower values produce 2--3 monolithic communities, higher values fragment into many small communities of $\sim 30$ cells. At $\gamma = 0.5$ the median sample yields 76 communities, with the full cohort summing to 11{,}496 non-anomaly communities across 110 samples.
+
+Each community is summarised by its cell-type composition: an 8-dimensional vector giving the fraction of cells in that community belonging to each \classid{0}--\classid{7}. To align communities across samples I filter to those with at least 100 cells (9{,}457 communities of the 11{,}496) and apply hierarchical clustering with Ward linkage and Euclidean distance on the composition vectors. The number of clusters $K$ is chosen by inspecting the dendrogram and the within-cluster homogeneity at several values of $K$; $K = 20$ is the smallest value at which clusters remain compositionally pure (median intra-cluster cosine distance $\leq 0.15$). The 20 clusters become the \emph{niches} of the project, and every community is assigned to its niche centroid. Cells in communities below the 100-cell threshold are left unassigned; the assignment covers 77\% of cohort cells overall.
+
+\subsection*{The 20 niches form a coherent compositional landscape}
+
+The composition centroid of each niche, sorted by dominant cell-type class, is shown in Figure~\ref{fig:part2_centroid}. The 20 niches partition across the eight cell types as follows: four are dominated by Tumor cells (\nicheid{0}, \nicheid{1}, \nicheid{2}, \nicheid{4}), four by B cells (\nicheid{16}, \nicheid{17}, \nicheid{18}, \nicheid{19}), four by Fibroblasts (\nicheid{3}, \nicheid{9}, \nicheid{10}, \nicheid{12}), three by Normal epithelium (\nicheid{5}, \nicheid{6}, \nicheid{7}), two by Myeloid cells (\nicheid{8}, \nicheid{13}), two by SMC (\nicheid{14}, \nicheid{15}), one by Endothelial cells (\nicheid{11}), and zero by T cells. The asymmetric distribution across cell types reflects both the underlying cohort composition (Tumor and B cells are abundant; T cells and Endothelial are rare) and the spatial homogeneity of each population (T cells are infiltrating and disperse, so they never accumulate into a niche of their own).
+
+Several niches are remarkably pure (dominant fraction $\geq 0.75$): \nicheid{0} is 95\% Tumor, \nicheid{1} is 82\% Tumor, \nicheid{5} is 88\% Normal epithelium, \nicheid{9} is 76\% Fibroblast, \nicheid{8} is 72\% Myeloid, \nicheid{15} is 87\% SMC, and \nicheid{16} is 79\% B cells. These are the "characteristic" niches of their cell type --- regions where one population is overwhelming and the local microenvironment is largely homogeneous.
+
+Other niches are intentional mixtures that the hierarchical clustering refused to merge with the nearest pure neighbour, because the mixture itself recurs across patients with sufficient consistency to define its own niche. \nicheid{4} is 46\% Tumor + 17\% Fibroblast + 17\% Myeloid (a tumour-stroma-inflammation interface niche); \nicheid{3} is 38\% Fibroblast and 37\% Tumor in roughly equal parts (a tumor-stroma border); \nicheid{14} is 42\% SMC + 35\% B cells (a vascular-immune interface, see niche 17 below); \nicheid{6} is 40\% Normal epithelium + 35\% B cells (an epithelial-immune boundary); \nicheid{13} is 27\% Myeloid + 19\% B cells + 26\% Fibroblast (a highly heterogeneous mixed niche).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\linewidth]{part2_niche_centroid_heatmap.pdf}
+    \caption{Composition centroids of the 20 niches, sorted by dominant cell-type class (primary) and dominant fraction descending (secondary, so the purest niches of each compositional family appear at the top of their block). Each row is a niche; columns give the fraction of cells in that niche belonging to each cell type, with biological labels. Only values $\geq 0.05$ are annotated for legibility. T cells never dominate any niche but appear as a 29\% secondary minority in \nicheid{17}, the B-cell + T-cell niche likely corresponding to tertiary lymphoid structures.}
+    \label{fig:part2_centroid}
+\end{figure}
+
+\subsection*{T cells never dominate a niche --- but cluster with B cells where they appear}
+
+A striking feature of this landscape is that T cells (\classid{6}) never dominate any of the 20 niches. In 18 of 20 niches, T cells contribute less than 5\% of the composition. \nicheid{13} sits just above the threshold at 5.1\%. The only niche where T cells form a substantial population is \nicheid{17}, where they make up 29\% of the composition alongside the dominant B cells (48\%).
+
+The composition of \nicheid{17} (B cells 48\% + T cells 29\%, with Endothelial cells at 7\% as the next contributor) is consistent with the morphology of tertiary lymphoid structures (TLS) in tumour tissue: organised aggregates of B and T cells, typically perivascular, that form as part of the anti-tumour immune response. This interpretation will become important in \partref{4}, where the per-class GGM of B cells (\classid{0}) recovers a smooth-muscle hub signature consistent with the perivascular localisation of B cells in TLS.
+
+The structural distinctness of T cells will recur in every subsequent Part: they are the worst-classified class in the GNN of \partref{3}, they form the most isolated network in the per-class GGM of \partref{4}, and they are the dominant secondary in the only niche that lies apart from its compositional family in the network-based dendrogram of \partref{5}. All four signatures point to the same underlying biology: T cells in tumour tissue are diffuse infiltrating populations with no consistent spatial neighbourhood.
+
+\subsection*{Niches are spatially coherent regions}
+
+The niches were defined by composition, not by space. If the algorithm has captured something real, niche assignments should form spatially contiguous regions within each sample, not random scatter. Figure~\ref{fig:part2_spatial_niches} shows two representative samples with cells coloured by their assigned niche. In both samples (sample 2, compact, 43{,}023 cells; sample 20, compact, 45{,}068 cells) the niches form coherent spatial blocks: large stretches of a single niche colour, with sharp boundaries at the interfaces. Unassigned cells (cells in Leiden communities below the 100-cell threshold) appear as occasional grey speckles in regions of low cell density.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{part2_spatial_niches.png}
+    \caption{Spatial layout of two representative samples, with cells coloured by their assigned niche. The colour palette is shared between panels (\texttt{tab20}). Niches form coherent spatial blocks rather than random scatter, supporting the interpretation that they correspond to genuine tissue microenvironments rather than algorithmic artefacts. Unassigned cells appear as grey speckles, mostly in regions of lower cell density.}
+    \label{fig:part2_spatial_niches}
+\end{figure}
+
+I checked sample 47 (a fragmented architecture, from \partref{1}) as a stress test: only 38\% of its cells receive niche assignments, with most unassigned cells lying in the upper tendrils of the tissue. This is not a failure of niche detection but a structural consequence of fragmentation: the Leiden communities in fragmented samples are smaller, more rarely cross the 100-cell threshold, and therefore drop out of the alignment step. Compact samples like \#20 and \#2 in Figure~\ref{fig:part2_spatial_niches} consistently exceed 95\% assignment, while fragmented samples vary between 50\% and 60\%. I treat the niche analysis as well-defined on the cohort but with weaker resolution on the fragmented mode.
+
+\subsection*{Niche recurrence partitions the niches into four bands}
+
+How widely a niche appears across the 56 patients is itself an informative property. For each niche, I count the number of distinct patients that contribute at least one cell to it; the distribution is shown in Figure~\ref{fig:part2_recurrence}. The 20 niches split into four recurrence bands:
+
+\begin{itemize}
+    \item \textbf{Universal} ($\geq 48$ patients, $\geq 85\%$): four niches recur in nearly every patient. These are \nicheid{4} (53 patients, Tumor-mixed), \nicheid{2} (52, Tumor-dominant), \nicheid{1} (48, Tumor pure), and \nicheid{13} (48, Myeloid heterogeneous). The fact that three of the four are Tumor-dominant reflects the centrality of Tumor cells in the cohort: tumour tissue is the common substrate.
+    \item \textbf{Common} ($28 \leq$ patients $< 48$): eleven niches are present in at least half of patients but not all. They include the Tumor-pure \nicheid{0} (45 patients), the Fibroblast-pure \nicheid{9} (37), the various B-cell niches (\nicheid{19} at 43, \nicheid{16} at 39, \nicheid{18} at 38, \nicheid{17} at 31), and most of the Fibroblast and Normal-epithelium niches.
+    \item \textbf{Selective} ($14 \leq$ patients $< 28$): four niches recur in a quarter to half of patients. These tend to be the purer or more specialised niches: \nicheid{6} (25 patients, Normal-ep-mixed), \nicheid{14} (24, SMC-mixed), \nicheid{8} (23, Myeloid pure), \nicheid{5} (22, Normal-epithelium 88\% pure).
+    \item \textbf{Rare} ($<14$ patients, $<25\%$): one niche appears only in a small minority of the cohort. \nicheid{15}, the only pure-SMC niche (87\% SMC), recurs in 11 patients.
+\end{itemize}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\linewidth]{part2_niche_recurrence.pdf}
+    \caption{Number of patients containing each niche, sorted by recurrence. Niches partition into four bands: universal (dark blue), common (lighter blue), selective (green), and rare (orange). Reference lines mark the band thresholds at 85\%, 50\%, and 25\% of the 56 patients. The single rare niche (\nicheid{15}, pure SMC at 87\%) appears in only 11 patients --- a structural minority of the cohort.}
+    \label{fig:part2_recurrence}
+\end{figure}
+
+\nicheid{15} is the most informative rare niche for what comes next: pure SMC, restricted to 11 patients, with the second-highest count of "silent" common genes in the per-niche GGM analysis of \partref{5} (24 of 378 common genes have zero variance in this niche's subsample, second only to \nicheid{5} at 32). Its narrow patient base and specialised cell-type profile make it both biologically distinctive and statistically challenging to model.
+
+\medskip
+
+\noindent\textbf{Summary.} Twenty stable niches emerge from per-sample Leiden communities aligned across the cohort by hierarchical clustering on composition. They cover 77\% of cohort cells, form spatially coherent regions in compact samples, and split into four recurrence bands from universal to rare. Seven of the eight cell types host one to four niches; T cells never dominate any. \nicheid{17}, the B-cell-dominant niche with 29\% T-cell secondary, is the only place in the niche landscape where the two adaptive-immune cell types coexist in substantial proportions --- a composition consistent with tertiary lymphoid structures. The 20 niches become the units of analysis for Parts \ref{sec:part3} and \ref{sec:part5}.

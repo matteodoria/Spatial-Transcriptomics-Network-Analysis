@@ -1,0 +1,64 @@
+\documentclass[11pt, a4paper, oneside]{article}
+
+\input{preamble}
+
+\addbibresource{bibliography.bib}
+
+% Project metadata
+\title{
+    \vspace{-1em}
+    {\large Advanced Statistical Learning for Complex Data - Prof. Francesca Ieva}\\
+    {\Large \textbf{Network analysis of Visium HD spatial transcriptomics:\\
+    topology, niches, and gene co-expression at scale}}\\[0.5em]
+    {\large Project Report}
+}
+
+\author{
+    Matteo D'Oria\\
+    Data Analytics \& Decision Science PhD candidate\\
+    Politecnico di Milano \(\cdot\) Human Technopole Foundation
+}
+
+\date{Academic Year 2025/26}
+
+\begin{document}
+
+\maketitle
+
+\vspace{1em}
+\begin{abstract}
+    \noindent\input{sections/00_abstract}
+\end{abstract}
+
+\vspace{1em}
+{\small\tableofcontents}
+
+\clearpage
+
+\input{sections/01_introduction}
+
+\clearpage
+\input{sections/02_part1_topology}
+
+\clearpage
+\input{sections/03_part2_niches}
+
+\clearpage
+\input{sections/04_part3_gnn}
+
+\clearpage
+\input{sections/05_part4_ggm}
+
+\clearpage
+\input{sections/06_part5_niche_networks}
+
+\clearpage
+\input{sections/07_discussion}
+
+\clearpage
+\input{sections/08_methods}
+
+\clearpage
+\printbibliography[heading=bibnumbered, title={References}]
+
+\end{document}

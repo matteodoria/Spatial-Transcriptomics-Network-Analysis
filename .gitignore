@@ -1,0 +1,35 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# OS / IDE
+.DS_Store
+.idea/
+
+# Large derived data & caches
+cache/
+logs/
+results/
+out/
+data/processed/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+report/*.log
+report/*.out
+/notebooks/deprecated/

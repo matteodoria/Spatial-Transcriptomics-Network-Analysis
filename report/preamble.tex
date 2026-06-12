@@ -1,0 +1,114 @@
+% ============================================================
+%   ASLCD project report — preamble
+%   pdflatex + biber compilation
+% ============================================================
+
+% --- Encoding (pdflatex compatibility; harmless on modern engines) ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% --- Fonts ---
+\usepackage{lmodern}        % Latin Modern (improved Computer Modern)
+\usepackage{microtype}      % Better justification
+
+% --- Page layout ---
+\usepackage[a4paper, margin=2.6cm, top=2.5cm, bottom=2.8cm]{geometry}
+\usepackage{parskip}        % Paragraph spacing, no indent
+
+% --- Math ---
+\usepackage{amsmath, amssymb, mathtools}
+\usepackage{siunitx}
+\sisetup{
+    detect-all,
+    range-units=single,
+    range-phrase=--,
+    group-separator={,},
+    group-minimum-digits=4,
+}
+
+% --- Figures and tables ---
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{caption}
+\usepackage{subcaption}
+\captionsetup{font=small, labelfont=bf, format=plain, justification=raggedright,
+              singlelinecheck=false}
+\usepackage{booktabs}
+\usepackage{multirow}
+
+% --- Lists ---
+\usepackage{enumitem}
+\setlist[itemize]{leftmargin=1.5em, itemsep=0.2em}
+\setlist[enumerate]{leftmargin=1.6em, itemsep=0.2em}
+
+% --- Colors and links ---
+\usepackage{xcolor}
+\definecolor{linkcolor}{HTML}{1F4E79}     % muted dark blue
+\definecolor{codecolor}{HTML}{555555}     % gray for code
+\definecolor{kwcolor}{HTML}{1F4E79}       % keyword color
+
+\usepackage[colorlinks=true,
+            linkcolor=linkcolor,
+            citecolor=linkcolor,
+            urlcolor=linkcolor,
+            pdftitle={ASLCD project report},
+            pdfauthor={Matteo Doria}]{hyperref}
+
+% --- Code listings ---
+\usepackage{listings}
+\lstdefinestyle{python}{
+    basicstyle=\ttfamily\small\color{codecolor},
+    keywordstyle=\color{kwcolor}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{linkcolor},
+    showstringspaces=false,
+    breaklines=true,
+    breakatwhitespace=true,
+    frame=single,
+    framerule=0.4pt,
+    rulecolor=\color{gray!50},
+    xleftmargin=1em,
+    framexleftmargin=1em,
+    language=Python,
+}
+\lstset{style=python}
+
+% --- Bibliography ---
+\usepackage[backend=biber,
+            style=numeric-comp,
+            sorting=none,
+            maxbibnames=6,
+            minbibnames=3]{biblatex}
+
+% --- Quotation handling (required by biblatex) ---
+\usepackage{csquotes}
+
+% --- Useful custom commands ---
+\newcommand{\nicheid}[1]{Niche~#1}
+\newcommand{\classid}[1]{Class~#1}
+\newcommand{\partref}[1]{Part~#1}
+\newcommand{\rsq}{R^{2}}
+\newcommand{\macroF}{\text{macro-}F_{1}}
+
+% --- Boxed insights (for "key finding" callouts) ---
+\usepackage[most]{tcolorbox}
+\newtcolorbox{insight}[1][]{
+    colback=blue!2!white,
+    colframe=linkcolor,
+    boxrule=0.5pt,
+    fonttitle=\bfseries,
+    coltitle=white,
+    title=Key finding,
+    sharp corners,
+    breakable,
+    #1
+}
+
+% --- Section formatting ---
+\usepackage{titlesec}
+\titleformat{\section}{\normalfont\Large\bfseries\color{linkcolor}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\normalsize\bfseries\itshape}{\thesubsubsection}{0.5em}{}
+
+\titlespacing*{\section}{0pt}{2.0em}{0.8em}
+\titlespacing*{\subsection}{0pt}{1.3em}{0.5em}

@@ -1,0 +1,97 @@
+% ============================================================
+%   §2 Part 1: spatial graph topology
+% ============================================================
+\section{Spatial graph topology}
+\label{sec:part1}
+
+The spatial $k$-nearest-neighbour graph is the substrate of every analysis that follows: niche detection in \partref{2} operates on it, the GNN in \partref{3} consumes it through neighbour sampling, and the per-class and per-niche networks in Parts \ref{sec:part4}--\ref{sec:part5} are downstream of the niches it induces. The first question, therefore, is what this graph captures across the 112 samples of the cohort, and to what extent its topology reflects biology rather than artefacts of tissue handling or segmentation.
+
+I summarise each sample with a free-tier of eight cheap-to-compute metrics --- mean degree, fraction of isolated nodes, fraction of cells in the largest connected component, number of components of size $\geq 100$, global transitivity, mean local clustering, degree assortativity, and cell-type assortativity --- and an expensive tier of vertex-level statistics (closeness, betweenness) computed on a subset of ten samples. The free tier is fast enough to run on the full cohort: the resulting parquet table has 112 rows and 22 columns and is loaded once at the start of every downstream notebook. Two samples (\#87 and \#107) emerge as topological anomalies during the free-tier pass and are excluded from subsequent cohort-level analysis, leaving 110 well-behaved samples.
+
+\subsection*{Local topology is consistent across the cohort}
+
+The first observation is that the local statistics of the graph vary very little across patients. Figure~\ref{fig:part1_mean_degree} shows the distribution of mean degree per sample. After excluding the two anomalies, 108 of 110 samples concentrate between mean degree 6 and 9, with a median of 8.24 and a tight, single-peaked shape. This is essentially what one would expect from a KNN construction with $k = 8$ followed by symmetrisation and a radius cap: every sample sits close to that ceiling, with deviation driven by how often the radius cap discards far-away neighbours in sparse regions. Local transitivity is similarly uniform across the cohort (mean $\approx 0.53$, low spread), and the mean local clustering coefficient varies in a narrow band.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.78\linewidth]{part1_mean_degree_distribution.pdf}
+    \caption{Per-sample mean degree of the spatial graph, across the 112 samples of the cohort. The two anomalies (\#87, \#107) sit far in the left tail at mean degree below 4 and are excluded from cohort-level analyses. The remaining 110 samples concentrate tightly around the median (8.24).}
+    \label{fig:part1_mean_degree}
+\end{figure}
+
+\subsection*{Global connectivity is bimodal}
+
+Local consistency does not extend to global connectivity. The fraction of cells belonging to the single largest connected component --- a global statistic about how the tissue holds together --- is sharply bimodal across the cohort (Figure~\ref{fig:part1_bimodality}). Roughly 17 samples have a largest-component fraction near 0.95: their tissue is essentially a single contiguous piece, what I call \emph{compact architecture}. A second group of samples, with largest-component fraction in the $[0.25, 0.45]$ range, has its cells split across many roughly equal components; their tissue holds tendril-like fragments. I refer to these as \emph{fragmented architecture}. The middle of the histogram is populated but sparse, suggesting that the two modes are not extremes of a continuum but distinct configurations.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.78\linewidth]{part1_lcf_bimodality.pdf}
+    \caption{Histogram of the largest connected component fraction across 110 samples (anomalies excluded). The bimodal shape separates compact tissue ($\sim 0.95$) from fragmented tissue ($\sim 0.35$); the two modes are not extremes of a continuum but distinct architectures.}
+    \label{fig:part1_bimodality}
+\end{figure}
+
+This is an important finding for downstream work: many of the analyses in Parts \ref{sec:part2}--\ref{sec:part5} subsample 5000 cells from a tissue region, and they will behave differently on compact and fragmented samples. I revisit this point in \partref{2}, where niche assignment recovers about 97\% of cells in compact samples but only $\sim 55\%$ in fragmented ones (the unassigned cells live in many small Leiden communities that do not aggregate into niches).
+
+I also checked whether the architecture is patient-consistent --- whether the two samples of each patient land in the same mode. They do not: the Spearman correlation of largest-component fraction between paired samples of the same patient is only $r \approx 0.04$. Tissue architecture is therefore a per-sample property, not a per-donor one. This rules out the simplest interpretation (some patients have "compact tissue" by biological default) and points toward sample-level handling factors as the more plausible source of fragmentation.
+
+\subsection*{Topology correlates with cell-type composition}
+
+Topology statistics are not just artefacts of the graph construction; they correlate with what is in the sample. Figure~\ref{fig:part1_composition_topology} shows the Spearman correlation between the eight topology metrics and the per-sample fraction of each cell-type class, computed across the 110 non-anomaly samples.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\linewidth]{part1_composition_topology_heatmap.pdf}
+    \caption{Spearman correlation between eight topology metrics (rows) and the per-sample fraction of each cell-type class (columns), across the 110 non-anomaly samples. SMC (\classid{5}) dominates the structure: it strongly anti-correlates with local density ($\rho = -0.58$ vs.\ mean degree, $\rho = -0.60$ vs.\ mean local clustering) and positively correlates with fragmentation indices ($\rho = +0.51$ vs.\ isolated fraction, $\rho = +0.64$ vs.\ number of components $\geq 100$).}
+    \label{fig:part1_composition_topology}
+\end{figure}
+
+Two features of this heatmap are worth highlighting. First, SMC (\classid{5}) stands out as the dominant driver of topological variation across the cohort. Samples rich in SMC have lower mean degree ($\rho = -0.58$), lower clustering ($\rho = -0.60$), more isolated cells ($\rho = +0.51$), and more components of size $\geq 100$ ($\rho = +0.64$). In other words, SMC marks sparse, fragmented regions of tissue --- consistent with the perivascular and connective localisation of smooth muscle cells, which occupy lower-density spatial niches than the dense epithelial or stromal compartments.
+
+Second, B cells (\classid{0}) and T cells (\classid{6}) show an opposite pattern: they correlate negatively with sparsity ($\rho = -0.39$ and $-0.26$ for mean degree, $\rho = -0.50$ and $-0.37$ for mean local clustering) and positively with compactness. T cells also negatively correlate with degree assortativity ($\rho = -0.40$): they tend to sit at the boundary between high-degree and low-degree regions. This is the first cross-Part signal of a finding that will recur: T cells in tumour tissue are infiltrating populations that occupy boundary spatial contexts rather than homogeneous neighbourhoods. \partref{2} will confirm that they never dominate any niche, \partref{3} that they are the worst-classified cell type, and \partref{4} that their gene network has no overlap with any other class.
+
+\subsection*{The training mask reflects local density}
+
+The dataset provides a binary \texttt{train\_mask} that indicates which cells were used for model training in the original benchmarking. Figure~\ref{fig:part1_mask_vs_degree} shows that the per-sample fraction of cells retained by this mask is essentially a function of local density: Spearman $\rho = -0.91$ with mean degree. Dense samples have less of their cells in the training mask; sparse samples have more. This is a strong constraint to keep in mind for \partref{3}, where any model trained on the mask is implicitly trained on a density-biased subset of the cohort.
+
+\subsection*{Betweenness reveals tissue skeletons}
+
+The cheap-tier metrics are sample-level scalars. To probe the per-cell structure I computed betweenness centrality on the giant connected component of ten representative samples, using Brandes--Pich source/target sampling \cite{brandes2007centrality} (full betweenness on a 42{,}000-node graph is computationally prohibitive). The result is unexpectedly visual: in every sample, the top 1\% of cells by betweenness form a connected, branching pattern that traces the structural backbone of the tissue. Figure~\ref{fig:part1_betweenness} shows sample 2, where 425 cells of the 42{,}423-cell giant component are highlighted; the same pattern reproduces qualitatively on the other expensive-tier samples.
+
+\begin{figure}[h]
+    \centering
+    \begin{subfigure}[t]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{part1_mask_vs_degree.pdf}
+        \caption{}
+        \label{fig:part1_mask_vs_degree}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{part1_betweenness_skeleton.png}
+        \caption{}
+        \label{fig:part1_betweenness}
+    \end{subfigure}
+    \caption{Beyond cohort-level metrics: per-sample and per-cell observations.
+        \textbf{(a)} Per-sample train-mask keep fraction against mean degree, across 110 non-anomaly samples. The mask is almost deterministically anti-correlated with density ($\rho = -0.91$): dense samples have a smaller fraction of their cells in the training mask. Any classifier trained on the mask is implicitly trained on a density-biased subset of the cohort.
+        \textbf{(b)} Sample 2 spatial layout, with the top 1\% of cells by betweenness centrality (425 of 42{,}423) shown in red against the remainder of the giant connected component in grey. The high-betweenness cells form a connected, branching skeleton rather than a uniform spatial scatter: they sit at the bottlenecks between dense tissue blocks and act as graph-theoretic bridges between regions.}
+    \label{fig:part1_mask_skeleton}
+\end{figure}
+
+I checked whether betweenness-high cells are enriched for any particular cell-type class. Across the expensive-tier samples, no consistent enrichment emerges: the skeleton picks up whichever cell type happens to populate the inter-block bridges in that sample. The structural role is graph-defined, not biology-defined. Closeness centrality, in contrast, behaves essentially as an inverse Euclidean distance from the centroid of the sample ($r = 0.81$); it adds little information beyond geometry, and I drop it from subsequent analyses.
+
+\subsection*{Anomaly handling}
+
+Two samples (\#87 and \#107) trip the anomaly check during the free-tier pass: their mean degree is below 4, fraction of isolated nodes is above 0.35, and largest-component fraction is below 0.1. Figure~\ref{fig:part1_anomaly_handling} compares one of them, sample \#87, against a representative normal sample (\#2): at the same absolute spatial scale, the anomalous sample displays a cell population that is both sparser and distributed over a much larger spatial extent. Quantitatively, sample \#2 covers a $22\,000 \times 26\,000$-unit region with $43{,}023$ cells and a median nearest-neighbour distance of $52$ units; sample \#87 covers a $54\,000 \times 60\,000$-unit region with only $24{,}268$ cells and a median nearest-neighbour distance of $92$ units. The 99th percentile of nearest-neighbour distance is even more telling: $107$ units for sample \#2 against $455$ for sample \#87. Because the spatial graph applies a cohort-wide radius cap calibrated on the typical inter-cell distance, the KNN edges in sample \#87 are systematically rejected by the cap: cells exist in the data, but they are too far apart to form a graph that resembles a connected tissue. The single small giant component visible at the bottom right of the panel is the only cluster dense enough to survive the cap.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{part1_anomaly_handling.png}
+    \caption{Anomaly handling: comparison of a representative normal sample (\#2) against the two anomalous samples (\#87, \#107) at a common spatial scale ($30\,000 \times 30\,000$ units, centred on each sample's centroid). Cells are coloured by cell type if they belong to the giant connected component of the spatial graph, light grey otherwise. The scalebar in each panel marks $5{,}000$ units. Sample \#2 fills its panel with densely connected coloured cells; samples \#87 and \#107 show cells distributed at a much lower density over a much larger spatial extent, with only a small giant component (the few coloured cells) surviving the radius cap on KNN edges.}
+    \label{fig:part1_anomaly_handling}
+\end{figure}
+
+I interpret these as tissue-handling or segmentation failures (necrosis, sample disgregation, or segmentation that recovered only a subset of cells) rather than as a biologically meaningful sparse architecture; either way, the KNN-with-radius-cap construction is not a suitable substrate for their analysis. Both samples are excluded from all cohort-level analysis from this point forward. The remaining 110 samples form the working cohort used in Parts \ref{sec:part2}--\ref{sec:part5}.
+
+\medskip
+
+\noindent\textbf{Summary.} The spatial graph is locally uniform across the cohort but globally bimodal, separating compact from fragmented tissue architectures. Topology correlates with cell-type composition, with SMC as the dominant driver of sparsity. The training mask is almost entirely a function of local density. Per-cell betweenness identifies a tissue skeleton with no cell-type signature: it is a graph property of the geometry, not of the biology. These observations inform every downstream analysis, and constrain how robustly the niche detection in \partref{2} and the GNN in \partref{3} are expected to generalise across the architectural modes of the cohort.

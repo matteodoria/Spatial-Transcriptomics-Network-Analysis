@@ -1,0 +1,1 @@
+/group/sottoriva/andrey.tyshevich/Foundational_Spatial_Model/foundational_model_data.zarr/

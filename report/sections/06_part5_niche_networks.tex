@@ -1,0 +1,88 @@
+% ============================================================
+%   §6 Part 5: per-niche gene networks
+% ============================================================
+\section{Per-niche gene networks}
+\label{sec:part5}
+
+\partref{4} fit gene networks per cell-type class. \partref{5} fits them per niche. The two analyses operate on the same data (the cohort's expression matrix), the same gene subset (378 common genes), the same regulariser ($\alpha = 0.07$), and the same subsampling protocol (5000 cells, patient-stratified). The only thing that changes is the partition: cells are now grouped by the niche assignment from \partref{2}, not by cell-type label. The question is whether the 20 resulting networks track the composition-based niche families identified in \partref{2}, or whether the gene-network space carries information that diverges from compositional similarity.
+
+A second motivation is methodological. Niches are heterogeneous in composition (each is a mixture of cell types, with one dominant class and several minorities), and they vary widely in how broadly they recur across patients. If the niche-level networks reproduce the per-class structure of \partref{4}, that is reassurance: gene networks are robust to the partition used. If they diverge, the divergence itself is informative.
+
+\subsection*{Twenty niche networks at \texorpdfstring{$\alpha = 0.07$}{alpha=0.07}}
+
+For each of the 20 niches I subsample 5000 cells from the training pool (or fewer if the niche has fewer cells available), restrict to the 378 common genes from \partref{4}, and fit the Graphical Lasso. The training pool is the same 40-patient training set used everywhere else; the held-out test patients are not used in any GGM. \nicheid{15} (pure SMC, rare) is available in only 7 of the 40 training patients; I note this as a caveat but proceed with its fit.
+
+A practical issue showed up during fitting: for some niches, several of the 378 common genes are effectively silent within that niche (per-gene standard deviation below $10^{-6}$, despite being broadly variable across the full cohort). The Graphical Lasso fails numerically if any input column has zero variance. I therefore drop silent genes per niche before fitting, then re-expand the resulting sparse precision matrix to the original $378 \times 378$ shape with an identity diagonal on the excluded entries. This preserves the index alignment across niches and allows pairwise comparison of edge sets.
+
+The number of silent genes per niche varies from 5 to 32, and the variation is itself biologically informative. Niches with restrictive cell-type compositions have more silent genes: \nicheid{5} (88\% Normal epithelium, restricted to 22 patients) silences 32 of the 378 common genes, the most of any niche; \nicheid{15} (87\% SMC, restricted to only 11 patients) silences 24 genes, the second most. Niches with broad, heterogeneous compositions have few silent genes: \nicheid{17} (the B-cell/T-cell mediator, 48\% B cells + 29\% T cells) silences only 5 genes. The edge counts of the fitted networks range from 629 to 1087, but the more interpretable quantity is edges-per-kept-gene, which ranges from $1.77$ to $3.00$. After accounting for the silent-gene effect, the niche networks have comparable connection density per included gene; only their absolute size varies.
+
+\subsection*{Niche networks resemble each other much less than class networks did}
+
+The pairwise edge Jaccard between niche networks (Figure~\ref{fig:part5_triple}, right panel) is markedly lower than for the per-class networks. The maximum off-diagonal edge Jaccard is $0.12$ --- only slightly above the per-class maximum of $0.09$ --- but the typical pair value is $0.02$--$0.05$. Hub Jaccard reaches up to $0.58$, larger than the per-class maximum of $0.36$, and composition cosine reaches $1.00$ on near-identical-composition niches. The three heatmaps span three different scales of similarity, and reading them at the same colour intensity would be misleading; I rescale each to its own off-diagonal maximum to preserve the internal structure.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{part5_triple_jaccard.pdf}
+    \caption{Pairwise similarity between the 20 per-niche networks under three measures: composition cosine (left, max $1.00$), top-15 hub Jaccard (middle, max $0.58$), and edge Jaccard (right, max off-diagonal $0.12$). Diagonals are masked. Niches labelled by id and dominant class. The composition heatmap shows strong block structure (c7-niches in the upper-left, c0-niches in the lower-right). The hub heatmap shows weaker but visible block structure. The edge heatmap shows almost no block structure: niches share regulators much more than they share specific edges.}
+    \label{fig:part5_triple}
+\end{figure}
+
+The composition heatmap (right panel) shows the strong block structure expected from \partref{2}: niches with the same dominant class are tightly grouped (the upper-left block contains Tumor-dominant niches, the lower-right block contains B-cell-dominant niches, and so on). The hub heatmap (middle) shows a weaker but visible echo of this block structure: niches \nicheid{8}--\nicheid{13}, the Myeloid-Fibroblast-Endothelial inflammatory cluster, share more hubs with each other than with the Tumor- or B-cell-dominant blocks. The edge heatmap (right) shows almost no block structure --- the bright spots in the middle (\nicheid{9}--\nicheid{13}) are the only weak indication that compositionally similar niches share any edges at all.
+
+\subsection*{Pairwise concordance vs.\ cluster recovery: a tension}
+
+The above suggests a moderate but real correspondence between gene networks and compositional similarity. Quantifying it: across all 190 niche pairs, the Spearman correlation between edge Jaccard and composition cosine is $\rho = 0.615$. The same correlation between hub Jaccard and composition cosine is $\rho = 0.400$. These are non-trivial: niches with similar compositions tend to have more similar gene networks.
+
+However, this is a pairwise statement. When I run hierarchical clustering on each similarity matrix and compare the resulting partition (at $K = 8$, matching the 8 cell-class-dominant families from \partref{2}) against the Part 2 families using the Adjusted Rand Index (ARI), the picture changes:
+
+\begin{itemize}
+    \item Composition cosine clustering vs.\ Part 2 families: ARI $= 0.802$ (sanity check; high as expected)
+    \item Edge Jaccard clustering vs.\ Part 2 families: ARI $= 0.250$
+    \item Hub Jaccard clustering vs.\ Part 2 families: ARI $= 0.054$
+\end{itemize}
+
+Pairwise concordance does not translate into cluster recovery. The gene networks contain enough information that pairs of similar niches tend to be flagged correctly ($\rho = 0.615$), but not enough to reproduce the family structure of \partref{2} as a partition. The dendrograms in Figure~\ref{fig:part5_dendrograms} make this visually clear: the composition dendrogram (right) is shallow and cleanly partitioned into composition families; the hub dendrogram (middle) has intermediate height and weak clustering; the edge dendrogram (left) is essentially flat, with leaf-to-leaf distances all in the range $0.85$--$0.97$.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{part5_dendrograms.pdf}
+    \caption{Hierarchical clustering of the 20 niches under three similarity measures, with average linkage. The composition dendrogram (left) is shallow and cleanly grouped: niches with the same dominant class merge at low distance ($< 0.30$). The hub dendrogram (middle) has intermediate height ($0.4$--$0.85$) and only weak family-level structure. The edge dendrogram (right) is flat (heights $0.85$--$0.97$): in edge space, almost all niches are equally distant from each other.}
+    \label{fig:part5_dendrograms}
+\end{figure}
+
+\begin{insight}
+Gene networks share some signal with composition (Spearman $\rho = 0.615$ at the pair level) but do not recover the compositional family structure at the cluster level (ARI $= 0.25$ for edges, $0.05$ for hubs, vs.\ $0.80$ for composition itself). Two niches that share a dominant class do tend to have more similar gene networks --- but the specific edges connecting genes are largely niche-specific.
+\end{insight}
+
+This is the "shared regulators, rewired connections" finding from \partref{4}, replayed at the niche level. At the class level, the pattern was clean: hub Jaccard up to $0.36$, edge Jaccard up to $0.09$. At the niche level it is weaker but consistent: pairs of compositionally similar niches share some hubs, but the connection structure between hubs varies across niches even when their dominant cell type is the same.
+
+\subsection*{Patient overlap is not the underlying driver}
+
+A natural concern is that patient cohort overlap is the latent variable behind both gene-network similarity and compositional similarity. Two niches present in the same set of patients might appear similar in both measures simply because they share the same expression-level batch effects.
+
+To test this, I compute the patient-set Jaccard between each pair of niches (the Jaccard overlap of the set of patients containing at least one cell of that niche, see Figure~\ref{fig:part5_patient}). I then correlate this patient-Jaccard with the other measures:
+
+\begin{itemize}
+    \item Patient Jaccard vs.\ composition cosine: $\rho = 0.575$
+    \item Patient Jaccard vs.\ edge Jaccard: $\rho = 0.419$
+    \item Patient Jaccard vs.\ hub Jaccard: $\rho = 0.367$
+\end{itemize}
+
+Patient overlap correlates with composition (0.575) almost as strongly as with the edge networks (0.419). But the comparison that matters is whether the network--composition correlation ($0.615$) is stronger than the network--patient correlation ($0.419$). It is. After accounting for the fact that compositionally similar niches tend to occur in overlapping patient sets, the residual network--composition signal remains the dominant one. The gene-network structure recovers biology more than it recovers cohort overlap.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.85\linewidth]{part5_patient_jaccard.pdf}
+    \caption{Patient-set Jaccard between the 20 niches (cohort-wide). Niches \nicheid{0}--\nicheid{4} form a high-overlap block (Jaccard $> 0.7$); four of the five are Tumor-dominant, and the fifth (\nicheid{3}) is the Fibroblast-Tumor border niche. The rare niches \nicheid{15} and \nicheid{14} have low overlap with everything else. The B-cell-dominant niches \nicheid{16}--\nicheid{19} form a second high-overlap block. Patient overlap correlates with composition ($\rho = 0.575$) and with edge Jaccard ($\rho = 0.419$), but the composition--edge correlation ($\rho = 0.615$) is the stronger of the two: the gene-network structure tracks composition more closely than patient cohort effects.}
+    \label{fig:part5_patient}
+\end{figure}
+
+\subsection*{Niche 17 is a network outlier consistent with its TLS-like composition}
+
+Looking at the edge-Jaccard clustering more carefully reveals one striking exception. \nicheid{17}, the B-cell-dominant niche with substantial T-cell secondary presence (48\% B cells, 29\% T cells, 7\% Endothelial cells), splits off into its own singleton in the edge-clustering tree (Figure~\ref{fig:part5_dendrograms}, right). The other B-cell-dominant niches (\nicheid{16}, \nicheid{18}, \nicheid{19}) cluster together at moderate distance, but \nicheid{17} sits apart from them. In hub-Jaccard clustering it also splits off into its own subtree.
+
+This is consistent with what \partref{2} and \partref{4} suggested. \nicheid{17} is the only niche in the cohort where T cells appear as a substantial secondary population --- a composition consistent with tertiary lymphoid structures, where B and T cells coexist in organised aggregates. Other B-cell-dominant niches (\nicheid{16} at 79\% B cells, \nicheid{19} at 53\%, \nicheid{18} at 47\%) lack the T-cell co-population and instead carry minorities of Endothelial cells, Fibroblasts, or Myeloid cells. The presence of T cells in \nicheid{17} brings their distinctive microenvironmental gene programme (recall from \partref{4}: T cells are the most disjoint class in the per-class GGM space) into the niche-level fit, and this is enough to push \nicheid{17}'s gene network into its own region of edge-Jaccard space. The cell-class-agnostic, network-based analysis independently flags \nicheid{17} as anomalous in a manner that aligns with the compositional analysis of \partref{2} and the per-class network analysis of \partref{4}.
+
+\medskip
+
+\noindent\textbf{Summary.} Per-niche GGMs reveal moderate pairwise concordance with composition ($\rho = 0.615$ edge--composition) but do not recover the compositional family structure at the cluster level (ARI $0.25$). Niches share some hubs (hub Jaccard up to $0.58$) but rewire most of their edges (edge Jaccard up to $0.12$, typical pair $0.02$--$0.05$). Patient cohort overlap explains some of the structure but is not the dominant driver. \nicheid{17}, the B-cell + T-cell niche (likely tertiary lymphoid structure), emerges independently as a network outlier in the edge-Jaccard clustering, consistent with the distinctive microenvironmental gene programme of T cells identified in \partref{4}. Gene networks at the niche level recapitulate the class-level "shared regulators, rewired connections" pattern of \partref{4}, with the additional finding that cluster-level structure is more divergent than pair-level similarity would suggest.

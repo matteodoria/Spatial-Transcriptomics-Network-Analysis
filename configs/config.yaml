@@ -1,0 +1,29 @@
+data:
+  raw_path:         "/group/sottoriva/andrey.tyshevich/Foundational_Spatial_Model/foundational_model_data.zarr/"
+  hvg_path:         "../data/hvg_info.tsv"
+  hvg_sep:          "\t"
+  hvg_gene_col:     "Unnamed: 0"
+  hvg_rank_col:     "highly_variable_rank"
+  processed_dir:    "data/processed/"
+  graph_path:       "data/processed/graph.pkl"
+  node_feat_path:   "data/processed/node_features.npz"
+  splits_dir:       "data/processed/splits/"
+
+  subset_n:         100000
+  random_seed:      42
+
+  zarr_keys:
+    he_emb:          "numerical/HE_embeddings"
+    rna:             "numerical/expression"
+    area:            "numerical/cell_area"
+    eccentricity:    "numerical/cell_eccentricity"
+    extent:          "numerical/cell_extent"
+    perimeter:       "numerical/cell_perimeter"
+    positions:       "numerical/positions"
+    cell_types:      "labels/cell_types"
+    train_mask:      "labels/idx_to_take_into_training_based_on_grid"
+    patient:         "labels/patient"
+    sample:          "labels/sample"
+    nn_ids:          "numerical/neighbors_idxs"
+    nn_dists:        "numerical/neighbors_radius"
+    nn_angles:       "numerical/neighbors_angle"

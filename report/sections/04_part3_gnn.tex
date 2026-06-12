@@ -1,0 +1,99 @@
+% ============================================================
+%   §4 Part 3: GNN cell typing
+% ============================================================
+\section{Multi-modal GNN cell typing}
+\label{sec:part3}
+
+\partref{3} asks a different kind of question from the previous Parts. So far the analysis has been descriptive: the spatial graph captures certain topological patterns, and the niches it induces are stable and interpretable. Whether any of this structure is \emph{predictive} of cell-type identity is a separate matter. \partref{3} answers that question through a controlled five-rung ablation, where I progressively add modalities (HVG expression, H\&E embedding, morphology) and model classes (logistic regression, MLP, GraphSAGE, GAT) and watch macro-$F_1$ track each addition.
+
+\subsection*{Task and split}
+
+The supervised task is per-cell classification into the eight cell-type classes introduced in \S\ref{sec:intro} (B cells, Endothelial, Fibroblasts, Myeloid cells, Normal epithelium, SMC, T cells, Tumor), with class imbalance of $7.9\times$ between the most and least frequent class. The patient-level split is fixed once at the beginning of the project and reused throughout: 40 patients for training, 8 for validation, 8 for testing. Validation macro-$F_1$ drives early stopping and rung selection. All models are trained on the cells flagged by the dataset's \texttt{train\_mask} field (which, as shown in \partref{1}, is itself a density-biased subset of the cohort).
+
+For input features, the gene expression vector is first reduced from the full 16{,}497 genes to a 1000-dimensional highly variable gene (HVG) selection computed with the Seurat criterion \cite{stuart2019seurat,wolf2018scanpy} on the training cells only. The 1280-dimensional UNI H\&E embeddings and the four morphology features are added as separate modalities for the multi-modal rungs. Per-modality feature standardisation uses the training-cell statistics only.
+
+\subsection*{The 5-rung ablation}
+
+The five rungs are designed to isolate the contribution of each modality and each architectural choice. \textbf{Rung 1} is a logistic regression on HVG features alone; it establishes the baseline of "per-cell expression with no neighbourhood information." \textbf{Rung 2} is a modality-fused MLP that concatenates HVG, H\&E, and morphology through per-modality encoders before a shared classification head; it tests whether per-cell features alone, with all modalities, can saturate the task. \textbf{Rung 3} is a 2-layer GraphSAGE \cite{hamilton2017graphsage} on HVG features only; it isolates the contribution of the spatial graph by comparing against Rung 2 (multi-modal, no graph). \textbf{Rung 4} adds the H\&E and morphology modalities to GraphSAGE; it tests whether modalities and graph compose. \textbf{Rung 5} replaces GraphSAGE with a 2-layer GAT \cite{velickovic2018gat} of 4 attention heads, again with all modalities; it tests whether attention over neighbours is useful beyond uniform neighbour aggregation. All GNN training uses neighbour sampling with batch size 2048 and early stopping with patience 3 on validation macro-$F_1$.
+
+Figure~\ref{fig:part3_rung_comparison} summarises the validation macro-$F_1$ of the best epoch for each rung. The pattern is clean enough to extract three claims directly.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\linewidth]{part3_rung_comparison.pdf}
+    \caption{Validation macro-$F_1$ of the best epoch for each of the five rungs. The spatial graph (Rung 2 $\rightarrow$ Rung 3) drives a +6.5 percentage-point gain over a strong per-cell baseline. Adding modalities on top of GraphSAGE (Rung 4) does not improve over Rung 3, nor does replacing aggregation with attention (Rung 5). The winning rung (highlighted in dark blue) is Rung 3, GraphSAGE on HVG features alone.}
+    \label{fig:part3_rung_comparison}
+\end{figure}
+
+\textbf{First, the spatial graph helps substantially.} Rung 3 (GraphSAGE, HVG only) reaches $\macroF = 0.6350$, a 6.5-percentage-point gain over the multi-modal MLP at Rung 2 ($\macroF = 0.5704$). The graph signal therefore provides more information than the H\&E embedding and morphology features combined.
+
+\textbf{Second, modalities do not compose with the graph.} Rung 4 (GraphSAGE with all modalities) reaches $\macroF = 0.6308$, slightly \emph{below} the HVG-only Rung 3. Adding H\&E and morphology on top of a graph model not only fails to help, it marginally hurts. One interpretation is that the modalities encode some of the same neighbourhood signal that GraphSAGE already extracts through aggregation, and the additional features act as a regularisation tax rather than a true information gain.
+
+\textbf{Third, attention does not improve over uniform aggregation.} Rung 5 (GAT, all modalities) reaches $\macroF = 0.6235$, the worst of the three GNN rungs. The optimal cell-type prediction does not benefit from learned, edge-specific weighting of neighbours. Combined with the previous claim, this suggests that the right inductive bias for this task is a simple mean-aggregating GNN on HVG features --- which is exactly Rung 3.
+
+\subsection*{Modality masking on the multi-modal MLP}
+
+To verify that the gain in Rung 3 is graph-driven and not just an architectural side-effect, I ran a modality-masking analysis on Rung 2, the multi-modal MLP. Setting each modality's encoder output to its mean (effectively removing the modality without changing model capacity) yields the following drops in validation macro-$F_1$:
+
+\begin{itemize}
+    \item HVG masked: $\macroF$ drops by $-39$ percentage points (catastrophic, as expected)
+    \item H\&E masked: $\macroF$ drops by $-8.5$ percentage points
+    \item Morphology masked: $\macroF$ drops by $-0.1$ percentage points (negligible)
+\end{itemize}
+
+The H\&E embedding contributes 8.5pp inside the multi-modal MLP --- a real but modest signal --- yet the same embedding contributes nothing when added on top of GraphSAGE. The graph and the H\&E embedding therefore overlap in the information they provide about a cell's identity. This is biologically plausible: H\&E captures the local tissue architecture (which is exactly what the spatial graph propagates), so the two modalities are partially redundant.
+
+\subsection*{Per-class progression and confusion structure}
+
+The aggregate validation $F_1$ hides substantial class-level variation. Figure~\ref{fig:part3_per_class} traces the per-class validation $F_1$ across the five rungs. Several patterns emerge:
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{part3_per_class_progression.pdf}
+    \caption{Per-class validation $F_1$ across the 5 rungs. Each line tracks one cell-type class. The graph (R2 $\rightarrow$ R3) produces large gains for B cells, Normal epithelium and Tumor cells; near-zero gains for SMC; and partial declines on R4--R5 for B cells and Fibroblasts.}
+    \label{fig:part3_per_class}
+\end{figure}
+
+Tumor cells (\classid{7}), the highest-performing class throughout, jump from $F_1 = 0.79$ at Rung 2 to $0.88$ at Rung 3 --- the largest single-rung gain in the figure, and the strongest evidence that GraphSAGE helps the abundant classes. Normal epithelium (\classid{4}) also jumps substantially (from $0.59$ to $0.70$). B cells (\classid{0}) jump from $0.52$ to $0.62$, then slowly decline through R4 and R5. SMC (\classid{5}), in contrast, sits near $F_1 \approx 0.72$ at all five rungs: per-cell features already saturate its classification, and the graph adds nothing. T cells (\classid{6}), the structurally distinctive class identified in \partref{1} and \partref{2}, remain the worst-performing class throughout (peak $F_1 \approx 0.42$ at Rung 3), consistent with their dispersed, infiltrating spatial distribution: neighbourhood features cannot discriminate T cells effectively because their neighbourhood lacks a consistent signature.
+
+Two classes regress on the multi-modal GNN rungs. B cells drop from $0.62$ (R3) to $0.56$ (R5), and Fibroblasts drop from $0.55$ (R3) to $0.51$ (R5). These are the two classes whose performance is most hurt by adding modalities on top of GraphSAGE --- the cases where the redundant H\&E/morphology signal acts as net noise.
+
+Figure~\ref{fig:part3_confusion} shows the row-normalised confusion matrix of Rung 3 on the test set. The diagonal is highest for SMC (94\% recall), Normal epithelium (89\%), and T cells (84\%) --- the latter despite its low $F_1$, because precision rather than recall is the limiting factor for T cells. The dominant off-diagonals are B cells $\rightarrow$ T cells (14\%), Tumor $\rightarrow$ Normal epithelium (25\%), and Fibroblasts $\rightarrow$ Myeloid cells (17\%); these are the systematic mistakes the model makes, and they correspond to the niche-mixing patterns of \partref{2}. The Tumor $\rightarrow$ Normal-epithelium confusion is consistent with \nicheid{7} (Normal epithelium 53\% + Tumor 16\%), the tumor-epithelial border niche, where Tumor cells abut adjacent normal tissue and become locally indistinguishable from it. The Fibroblasts $\rightarrow$ Myeloid confusion is consistent with the inflammatory cluster of niches \nicheid{9}--\nicheid{13}, where Fibroblasts and Myeloid cells coexist at substantial proportions. The B cells $\rightarrow$ T cells confusion is the signature of \nicheid{17}, the TLS-like niche.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.65\linewidth]{part3_confusion_matrix.pdf}
+    \caption{Row-normalised confusion matrix of Rung 3 on the test set. Diagonal entries give per-class recall. The strongest off-diagonal confusions (B cells $\rightarrow$ T cells, Tumor $\rightarrow$ Normal epithelium, Fibroblasts $\rightarrow$ Myeloid) correspond to the niche-mixing patterns identified in \partref{2}.}
+    \label{fig:part3_confusion}
+\end{figure}
+
+\subsection*{Training dynamics}
+
+The training curves of Rung 3 (Figure~\ref{fig:part3_curves}) reveal that GraphSAGE converges very quickly on this task. The training loss decreases monotonically from $0.79$ to $0.72$ over six epochs, but the validation macro-$F_1$ oscillates in the very narrow range $[0.627, 0.635]$ from epoch 1 onwards. The model reaches near-optimal validation performance after a single epoch; subsequent training refines the train loss without improving validation. Early stopping with patience 3 terminates training at epoch 6, picking the best validation epoch (epoch 3) as the checkpoint. This pattern is consistent with the strong saturation observed in the per-class progression: cell-type identity in this dataset is largely a function of immediate-neighbourhood features, and GraphSAGE finds the relevant signal almost immediately.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\linewidth]{part3_training_curves.pdf}
+    \caption{Training curves of Rung 3. Train loss (left) decreases monotonically, while validation macro-$F_1$ (right) plateaus near $0.633$ after the first epoch. The dashed line marks the best validation epoch (epoch 3). The model converges very quickly on this task.}
+    \label{fig:part3_curves}
+\end{figure}
+
+\subsection*{Test set evaluation and per-niche breakdown}
+\label{sec:part3_test}
+
+Selecting Rung 3 as the winning configuration on the validation set, I run a single evaluation on the held-out 8-patient test set. The test macro-$F_1$ is $\macroF = 0.6089$, a $-2.6$pp gap from the validation $F_1$. This is small but real, and it sets the realistic upper bound on what this approach can achieve on unseen patients. Per-patient test macro-$F_1$ ranges from $0.473$ (patient 0) to $0.625$, with mean $0.547$ and standard deviation $0.042$; the patient-level variation is small, suggesting the model generalises consistently rather than relying on a few easy patients.
+
+The more informative breakdown is per-niche (Figure~\ref{fig:part3_per_niche}). Test macro-$F_1$ by niche varies from $\sim 0.24$ (\nicheid{0}, pure Tumor) to $\sim 0.85$ (\nicheid{12}, Fibroblasts $+$ B cells mix). The worst-performing niches are the small, niche-pure ones in the test patients --- \nicheid{0}, \nicheid{15}, \nicheid{1}, \nicheid{14} all score below the median --- while the heterogeneous mixed niches (\nicheid{12}, \nicheid{19}, \nicheid{10}, \nicheid{18}) score above $0.70$. The median per-niche test $F_1$ is only $0.449$, well below the aggregate test $F_1$ of $0.609$, because the large heterogeneous niches dominate the cell count and pull the aggregate up.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{part3_per_niche_test_f1.pdf}
+    \caption{Rung 3 test macro-$F_1$ broken down by niche, sorted descending. Each bar is coloured by the dominant cell-type class of the niche. Cell counts are annotated above each bar. The median per-niche test $F_1$ ($0.449$) is well below the aggregate test $F_1$ ($0.609$), reflecting that large heterogeneous niches dominate the aggregate. Small homogeneous niches (\nicheid{0}, 15, 1) are the most difficult.}
+    \label{fig:part3_per_niche}
+\end{figure}
+
+This is an important nuance for downstream use of the model: the macro-$F_1$ of $0.609$ is a fair summary of the model's quality on a per-cell basis, but it masks substantial heterogeneity across spatial regions. A niche-pure region in a test patient is much harder than a heterogeneous one, because per-cell features in a pure region give the model less to distinguish.
+
+\medskip
+
+\noindent\textbf{Summary.} A 2-layer GraphSAGE on HVG features achieves test macro-$F_1$ of $0.6089$, an absolute improvement of $\sim 5$pp over a strong multi-modal MLP baseline that has no access to the graph. Adding the H\&E embedding or graph attention on top of GraphSAGE yields no further gain. The spatial graph is the single most informative architectural choice for this task, and one that subsumes a substantial fraction of the information carried by the H\&E modality. T cells remain the structurally hardest class in every configuration, consistent with their dispersed, infiltrating spatial distribution and their boundary topological role from \partref{1}--\partref{2}.
