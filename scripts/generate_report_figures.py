@@ -37,42 +37,129 @@ sys.path.insert(0, str(ROOT / "src"))
 # Style: clean, print-friendly matplotlib defaults
 # -----------------------------------------------------------------------------
 def set_style():
+    """
+    Matplotlib style for report figures.
+
+    Modes:
+    - TRANSPARENT = False:
+        white paper/PDF, dark ink.
+    - TRANSPARENT = True:
+        transparent figures for dark deck/background, light ink.
+
+    Important for notebooks:
+    rcParams are global and persistent across cells, so we reset them first.
+    """
+    mpl.rcdefaults()
+
+    # -------------------------------------------------------------------------
+    # Ink/background palette
+    # -------------------------------------------------------------------------
+    if TRANSPARENT:
+        ink = LIGHT_INK
+        subtle_ink = LIGHT_INK
+        bg = "none"
+        axes_bg = "none"
+        grid_alpha = 0.20
+        grid_color = LIGHT_INK
+        legend_face = "none"
+        legend_edge = "none"
+    else:
+        ink = "#333333"
+        subtle_ink = "#555555"
+        bg = "white"
+        axes_bg = "white"
+        grid_alpha = 0.70
+        grid_color = "#dddddd"
+        legend_face = "white"
+        legend_edge = "#cccccc"
+
     mpl.rcParams.update({
-        # Figure
-        "figure.facecolor": "white",
+        # ---------------------------------------------------------------------
+        # Figure / save
+        # ---------------------------------------------------------------------
+        "figure.facecolor": bg,
         "figure.dpi": 150,
         "savefig.dpi": 300,
         "savefig.bbox": "tight",
-        "savefig.facecolor": "white",
+        "savefig.facecolor": bg,
+        "savefig.edgecolor": bg,
+
+        # ---------------------------------------------------------------------
         # Fonts
+        # ---------------------------------------------------------------------
         "font.family": "serif",
         "font.serif": ["Computer Modern Roman", "DejaVu Serif"],
         "font.size": 10,
+
         "axes.titlesize": 11,
         "axes.labelsize": 10,
         "xtick.labelsize": 9,
         "ytick.labelsize": 9,
         "legend.fontsize": 9,
+
+        # Math text: keeps LaTeX-like labels consistent without requiring LaTeX
+        "mathtext.fontset": "cm",
+        "mathtext.default": "regular",
+
+        # ---------------------------------------------------------------------
+        # Text colors
+        # ---------------------------------------------------------------------
+        "text.color": ink,
+        "axes.titlecolor": ink,
+        "axes.labelcolor": ink,
+        "xtick.color": ink,
+        "ytick.color": ink,
+
+        # ---------------------------------------------------------------------
         # Axes
-        "axes.facecolor": "white",
-        "axes.edgecolor": "#333333",
+        # ---------------------------------------------------------------------
+        "axes.facecolor": axes_bg,
+        "axes.edgecolor": ink,
         "axes.linewidth": 0.8,
         "axes.spines.top": False,
         "axes.spines.right": False,
+
+        # ---------------------------------------------------------------------
+        # Grid
+        # ---------------------------------------------------------------------
         "axes.grid": True,
-        "grid.color": "#dddddd",
+        "grid.color": grid_color,
         "grid.linewidth": 0.5,
-        "grid.alpha": 0.7,
+        "grid.alpha": grid_alpha,
+
+        # ---------------------------------------------------------------------
         # Ticks
-        "xtick.color": "#333333",
-        "ytick.color": "#333333",
+        # ---------------------------------------------------------------------
         "xtick.direction": "out",
         "ytick.direction": "out",
-        # Lines
+        "xtick.major.size": 3.5,
+        "ytick.major.size": 3.5,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+
+        # ---------------------------------------------------------------------
+        # Lines / patches
+        # ---------------------------------------------------------------------
         "lines.linewidth": 1.5,
         "patch.linewidth": 0.5,
-    })
 
+        # ---------------------------------------------------------------------
+        # Legend
+        # ---------------------------------------------------------------------
+        "legend.frameon": True,
+        "legend.framealpha": 1.0,
+        "legend.facecolor": legend_face,
+        "legend.edgecolor": legend_edge,
+        "legend.labelcolor": ink,
+
+        # ---------------------------------------------------------------------
+        # PDF/SVG text handling
+        # Keeps text editable/searchable in vector outputs.
+        # ---------------------------------------------------------------------
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "svg.fonttype": "none",
+    })
 
 # -----------------------------------------------------------------------------
 # Color palette
@@ -83,6 +170,10 @@ ACCENT_GREEN = "#3F8E5C"
 ACCENT_GRAY = "#7A7A7A"
 ANOMALY_COLOR = "#E07A5F"    # warm orange for highlighting anomalies
 CLASS_COLORS = plt.cm.tab10.colors[:8]  # 8 cell-type classes
+
+# Figure a sfondo trasparente per il deck scuro (inchiostro chiaro)
+TRANSPARENT = True
+LIGHT_INK   = "#E8E0EF"   # testo/assi/tick: chiaro, legge sul prugna
 
 # Gene-family annotation used in Part 4 network figures. Each family lists
 # canonical HUGO symbols; genes not in any family fall into "Other".
@@ -125,10 +216,12 @@ def _gene_family(symbol: str) -> str:
 
 
 def save(fig, name: str, png: bool = False, dpi = 200):
-    """Save a figure as PDF (default) or PNG."""
-    ext = "png" if png else "pdf"
-    path = FIGDIR / f"{name}.{ext}"
-    fig.savefig(path, dpi = dpi, bbox_inches = 'tight')
+    """PDF (report) o, in modalità trasparente, PNG trasparente in figures/transparent/."""
+    ext = "png" if (png or TRANSPARENT) else "pdf"
+    outdir = (FIGDIR / "transparent") if TRANSPARENT else FIGDIR
+    outdir.mkdir(parents=True, exist_ok=True)
+    path = outdir / f"{name}.{ext}"
+    fig.savefig(path, dpi=dpi, bbox_inches="tight", transparent=TRANSPARENT)
     plt.close(fig)
     print(f"  saved {path.relative_to(ROOT)}")
 
@@ -322,10 +415,12 @@ def fig_part1_degree_distribution():
 
 def fig_part1_bimodality():
     """
-    Histogram of largest_component_frac showing bimodality.
-    Headline: tissue architecture has two modes (compact / fragmented).
+    Histogram of largest_component_frac across the cohort.
+    Headline: connectivity is a *continuous gradient* from fragmented to compact,
+    NOT two distinct modes (Hartigan dip test: dip = 0.025, p = 0.93).
+    Filename kept as part1_lcf_bimodality for backward-compat with the report .tex.
     """
-    print("[part1] bimodality")
+    print("[part1] connectivity gradient")
     free = pd.read_parquet(CACHE / "topology" / "free_tier.parquet")
     clean = free[~free["is_anomaly"]]
 
@@ -333,26 +428,17 @@ def fig_part1_bimodality():
     ax.hist(clean["largest_component_frac"], bins=25, color=PRIMARY, alpha=0.85,
             edgecolor="white", linewidth=0.5)
 
-    # Annotate the two modes
-    ax.axvline(0.35, color=SECONDARY, linestyle="--", linewidth=1.0,
-               label="fragmented mode (~0.35)")
-    ax.axvline(0.95, color=ACCENT_GREEN, linestyle="--", linewidth=1.0,
-               label="compact mode (~0.95)")
-
     ax.set_xlabel("Largest connected component fraction")
     ax.set_ylabel("Number of samples")
-    ax.set_title("Bimodal tissue architecture across the cohort (n = 110, anomalies excluded)")
+    ax.set_title("A continuous connectivity gradient across the cohort "
+                 "(n = 110, anomalies excluded)")
 
-    leg = ax.legend(
-        loc="upper right",
-        bbox_to_anchor=(0.85, 1.0),
-        frameon=True,
-        framealpha=1.0,
-        facecolor="white",
-        edgecolor="#cccccc",
-        fancybox=False,
-    )
-    leg.set_zorder(10)
+    ymax = ax.get_ylim()[1]
+    # Descriptive labels for the two ENDS of the continuum (not modes).
+    ax.text(0.155, ymax * 0.74, "fragmented", ha="center", va="top",
+            fontsize=9, style="italic", color=SECONDARY)
+    ax.text(0.90, ymax * 0.74, "compact", ha="center", va="top",
+            fontsize=9, style="italic", color=ACCENT_GREEN)
 
     save(fig, "part1_lcf_bimodality")
 
@@ -389,7 +475,16 @@ def fig_part1_composition_topology_heatmap():
                    "mean local cluster.", "deg. assortativity",
                    "cell-type assortativity"]
     comp_cols = [f"frac_class_{i}" for i in range(8)]
-    comp_labels = [f"class {i}" for i in range(8)]
+    comp_labels = [
+        "B cells",  # c0
+        "Endothelial",  # c1
+        "Fibroblasts",  # c2
+        "Myeloid",  # c3
+        "Normal epi.",  # c4
+        "SMC",  # c5
+        "T cells",  # c6
+        "Tumor",  # c7
+    ]
 
     corr = clean[topo_cols + comp_cols].corr(method="spearman")
     block = corr.loc[topo_cols, comp_cols].values
@@ -397,7 +492,7 @@ def fig_part1_composition_topology_heatmap():
     fig, ax = plt.subplots(figsize=(7.0, 4.5))
     im = ax.imshow(block, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
     ax.set_xticks(range(len(comp_cols)))
-    ax.set_xticklabels(comp_labels)
+    ax.set_xticklabels(comp_labels, rotation=30, ha="right")
     ax.set_yticks(range(len(topo_cols)))
     ax.set_yticklabels(topo_labels)
     ax.set_xlabel("Cell-type fraction in sample")
@@ -439,53 +534,66 @@ def fig_part1_mask_vs_degree():
     save(fig, "part1_mask_vs_degree")
 
 
-def fig_part1_betweenness_skeleton():
-    """
-    Sample 2 spatial layout with top-1% betweenness cells highlighted.
-    PNG (huge point count).
-    """
-    print("[part1] betweenness skeleton (PNG)")
-    # This needs the per-node betweenness arrays from compute_expensive_tier
-    # which were not persisted in the summary parquet. We need to recompute
-    # for sample 2 only, or load from a different cache.
-    #
-    # Check whether a per-sample expensive-tier cache exists.
+def _load_betweenness_sample(sample_id: int = 2):
+    """Carica (o ricalcola) positions+betweenness della giant component."""
     expensive_per_sample = CACHE / "topology" / "expensive_per_sample"
     if expensive_per_sample.exists():
-        # ideal case: load from cache
-        sample_file = expensive_per_sample / "sample_2.npz"
+        sample_file = expensive_per_sample / f"sample_{sample_id}.npz"
         if sample_file.exists():
             data = np.load(sample_file)
-            pos = data["positions"]
-            bw = data["betweenness"]
+            pos, bw = data["positions"], data["betweenness"]
         else:
-            print(f"  (sample_2.npz not found; recomputing)")
-            pos, bw = _recompute_betweenness_sample(2)
+            print(f"  (sample_{sample_id}.npz not found; recomputing)")
+            pos, bw = _recompute_betweenness_sample(sample_id)
     else:
-        pos, bw = _recompute_betweenness_sample(2)
+        pos, bw = _recompute_betweenness_sample(sample_id)
 
-    # Drop NaN (cells outside the giant component)
-    mask = ~np.isnan(bw)
-    pos_g = pos[mask]
-    bw_g = bw[mask]
+    mask = ~np.isnan(bw)          # drop cells outside the giant component
+    return pos[mask], bw[mask]
 
-    threshold = np.percentile(bw_g, 99)
+
+def _plot_betweenness_panel(ax, pos_g, bw_g, pct: float, sample_id: int = 2):
+    """Disegna un pannello: sfondo grigio + top-(100-pct)% evidenziato."""
+    threshold = np.percentile(bw_g, pct)
     is_top = bw_g >= threshold
+    top_frac = 100 - pct
 
-    fig, ax = plt.subplots(figsize=(7.0, 7.0))
-    # Background: all giant-component cells in light gray
+    bg = LIGHT_INK if TRANSPARENT else "#d8d8d8"
     ax.scatter(pos_g[~is_top, 0], pos_g[~is_top, 1],
-               s=0.3, c="#d8d8d8", alpha=0.6, rasterized=True)
-    # Foreground: top-1% in dark color
+               s=0.3, c=bg, alpha=0.45 if TRANSPARENT else 0.6, rasterized=True)
     ax.scatter(pos_g[is_top, 0], pos_g[is_top, 1],
                s=3, c=SECONDARY, alpha=0.95, rasterized=True)
     ax.set_aspect("equal")
     ax.set_xlabel("x position")
     ax.set_ylabel("y position")
-    ax.set_title(f"Sample 2 -- top 1% betweenness cells form a tissue skeleton\n"
-                 f"({is_top.sum():,} cells of {len(bw_g):,} in the giant component)")
+    ax.set_title(f"Top {top_frac:g}% betweenness "
+                 f"({is_top.sum():,} of {len(bw_g):,} cells)")
     ax.grid(False)
-    save(fig, "part1_betweenness_skeleton", png=True)
+
+
+def fig_part1_betweenness_skeleton(mode: str = "single", sample_id: int = 2):
+    """
+    Sample spatial layout with high-betweenness cells highlighted (PNG).
+
+    mode="single"  -> un solo pannello, top 1% (default)
+    mode="compare" -> due pannelli affiancati, top 1% e top 5%
+    """
+    print(f"[part1] betweenness skeleton (PNG, mode={mode})")
+    pos_g, bw_g = _load_betweenness_sample(sample_id)
+
+    if mode == "compare":
+        fig, axes = plt.subplots(1, 2, figsize=(13.0, 7.0))
+        _plot_betweenness_panel(axes[0], pos_g, bw_g, pct=99, sample_id=sample_id)
+        _plot_betweenness_panel(axes[1], pos_g, bw_g, pct=95, sample_id=sample_id)
+        fig.suptitle(f"Sample {sample_id} -- betweenness skeleton at two thresholds",
+                     y=0.98)
+        save(fig, "part1_betweenness_skeleton_compare", png=True)
+    else:
+        fig, ax = plt.subplots(figsize=(7.0, 7.0))
+        _plot_betweenness_panel(ax, pos_g, bw_g, pct=99, sample_id=sample_id)
+        ax.set_title(f"Sample {sample_id} -- top 1% betweenness cells form a "
+                     f"tissue skeleton")
+        save(fig, "part1_betweenness_skeleton", png=True)
 
 
 def _recompute_betweenness_sample(sample_id: int):
@@ -791,6 +899,114 @@ def fig_part2_niche_recurrence():
     ax.set_ylim(0, n_total_patients + 4)
     save(fig, "part2_niche_recurrence")
 
+def fig_part2_niche_recurrence_celltype():
+    """
+    Same recurrence bar chart as fig_part2_niche_recurrence, but each bar is
+    colored by the DOMINANT cell type of the niche (most frequent cell_type
+    among the cells assigned to that niche), using the shared CLASS_COLORS
+    palette. The universal/common/selective/rare threshold lines and labels
+    are kept; a legend maps colors -> cell-type names.
+    """
+    print("[part2] niche recurrence (colored by dominant cell type)")
+    import data_io
+    from matplotlib.patches import Patch
+
+    G = data_io.load_global(str(CACHE))
+    niche_per_cell = np.load(CACHE / "communities" / "niche_per_cell.npy")
+    n_niches = int(niche_per_cell[niche_per_cell >= 0].max()) + 1
+
+    # Recurrence: distinct patients per niche
+    n_patients_per_niche = np.zeros(n_niches, dtype=int)
+    # Dominant cell type per niche
+    dom_class_per_niche = np.zeros(n_niches, dtype=int)
+    for n in range(n_niches):
+        cells_in_niche = niche_per_cell == n
+        patients = np.unique(G.patient[cells_in_niche])
+        n_patients_per_niche[n] = len(patients)
+        # most frequent cell_type among cells assigned to this niche
+        ct_counts = np.bincount(G.cell_type[cells_in_niche], minlength=8)
+        dom_class_per_niche[n] = int(np.argmax(ct_counts))
+
+    n_total_patients = int(len(np.unique(G.patient)))
+
+    # Sort niches by recurrence (descending), same as the original
+    order = np.argsort(-n_patients_per_niche)
+    sorted_counts = n_patients_per_niche[order]
+    sorted_ids = order
+    sorted_dom = dom_class_per_niche[order]
+
+    # Category thresholds (kept identical to the original)
+    UNIVERSAL = int(n_total_patients * 0.85)
+    COMMON = int(n_total_patients * 0.50)
+    SELECTIVE = int(n_total_patients * 0.25)
+
+    # Biological cell-type names matching c0..c7 mapping (shared with Part 3)
+    class_names = [
+        "B cells",          # c0
+        "Endothelial",      # c1
+        "Fibroblasts",      # c2
+        "Myeloid",          # c3
+        "Normal epi.",      # c4
+        "SMC",              # c5
+        "T cells",          # c6
+        "Tumor",            # c7
+    ]
+
+    # Color each bar by its dominant cell type
+    colors = [CLASS_COLORS[c] for c in sorted_dom]
+
+    fig, ax = plt.subplots(figsize=(7.0, 3.6))
+    ax.bar(range(n_niches), sorted_counts, color=colors,
+           edgecolor="white", linewidth=0.4)
+    ax.set_xticks(range(n_niches))
+    ax.set_xticklabels([f"{i}" for i in sorted_ids], rotation=0, fontsize=8)
+    ax.set_xlabel("Niche id (sorted by recurrence)")
+    ax.set_ylabel(f"Patients with niche present  (of {n_total_patients})")
+    ax.set_title(f"Niche recurrence across the cohort  ({n_niches} niches, "
+                 f"{n_total_patients} patients)")
+    ax.grid(False)
+
+    # Reference lines for the category thresholds
+    ax.axhline(UNIVERSAL, color="#888888", linestyle="--", linewidth=0.6)
+    ax.axhline(COMMON, color="#888888", linestyle="--", linewidth=0.6)
+    ax.axhline(SELECTIVE, color="#888888", linestyle="--", linewidth=0.6)
+
+    # Category labels to the right of the bars
+    label_x = n_niches + 0.1
+    label_specs = [
+        ("UNIVERSAL",  (UNIVERSAL + n_total_patients) / 2),
+        ("COMMON",     (COMMON + UNIVERSAL) / 2),
+        ("SELECTIVE",  (SELECTIVE + COMMON) / 2),
+        ("RARE",       SELECTIVE / 2),
+    ]
+    for label, y in label_specs:
+        ax.text(label_x, y, label, ha="left", va="center", fontsize=8)
+    ax.set_xlim(-0.6, n_niches + .0)
+    ax.set_ylim(0, n_total_patients + 4)
+
+    # Legend: one swatch per dominant cell type actually present
+    present_classes = sorted(set(int(c) for c in sorted_dom))
+    legend_handles = [
+        Patch(facecolor=CLASS_COLORS[c], edgecolor="white",
+              label=class_names[c])
+        for c in present_classes
+    ]
+    # leg = ax.legend(
+    #     handles=legend_handles,
+    #     loc="upper right",
+    #     fontsize=8,
+    #     ncol=2,
+    #     frameon=True,
+    #     framealpha=1.0,
+    #     facecolor="white",
+    #     edgecolor="#cccccc",
+    #     fancybox=False,
+    #     title="Dominant cell type",
+    #     title_fontsize=8,
+    # )
+    # leg.set_zorder(10)
+
+    save(fig, "part2_niche_recurrence_celltype")
 
 # =============================================================================
 # PART 3 FIGURES
@@ -991,10 +1207,16 @@ def fig_part3_per_class_progression():
         "Tumor",            # c7
     ]
 
+    # Opacity of all lines EXCEPT T cells (c6). Set to 1.0 to disable dimming.
+    OTHER_LINES_ALPHA = 0.25
+    TCELL_CLASS = 6
+
     fig, ax = plt.subplots(figsize=(7.0, 4.0))
     for c in range(n_classes):
+        alpha = 1.0 if c == TCELL_CLASS else OTHER_LINES_ALPHA
         ax.plot(rung_ids, f1_matrix[c], marker="o", markersize=5,
-                color=CLASS_COLORS[c], linewidth=1.4, label=class_names[c])
+                color=CLASS_COLORS[c], linewidth=1.4, alpha=alpha,
+                label=class_names[c])
     ax.set_xlabel("Rung")
     ax.set_ylabel(r"Validation $F_1$ per class")
     ax.set_xticks(rung_ids)
@@ -1006,8 +1228,8 @@ def fig_part3_per_class_progression():
         loc="lower right",
         frameon=True,
         framealpha=1.0,
-        facecolor="white",
-        edgecolor="#cccccc",
+        facecolor="#15273F" if TRANSPARENT else "white",
+        edgecolor="white" if TRANSPARENT else "#cccccc",
         fancybox=False,
     )
     leg.set_zorder(10)
@@ -1137,15 +1359,18 @@ def fig_part3_per_niche_test_f1():
     ax.set_ylabel(r"Rung 3 test $\mathrm{macro\text{-}}F_1$")
 
     median = float(np.median(f1s_arr))
-    ax.axhline(median, color="gray", linestyle="--", linewidth=0.6)
+    ax.axhline(median, color=LIGHT_INK if TRANSPARENT else "gray",
+               linestyle="--", linewidth=0.6)
     # Annotate the median value at the right end of the dashed line
     ax.text(len(xs) - 0.5, median + 0.005, f"median = {median:.3f}",
-            ha="right", va="bottom", fontsize=8, color="#555555")
+            ha="right", va="bottom", fontsize=8,
+            color=LIGHT_INK if TRANSPARENT else "#555555")
 
     # Bar above showing cell count (small text on top of each bar)
     for x, v, n in zip(xs, sorted_f1, sorted_n):
-        ax.text(x, v + 0.015, f"{n//1000}k" if n >= 1000 else f"{n}",
-                ha="center", va="bottom", fontsize=6, color="black")
+        ax.text(x, v + 0.015, f"{n // 1000}k" if n >= 1000 else f"{n}",
+                ha="center", va="bottom", fontsize=6,
+                color=LIGHT_INK if TRANSPARENT else "black")
 
     ax.set_title("Rung 3 test $F_1$ broken down by niche, colored by dominant class")
 
@@ -1165,11 +1390,9 @@ def fig_part3_per_niche_test_f1():
         ncol=2,
         frameon=True,
         framealpha=1.0,
-        facecolor="white",
-        edgecolor="#cccccc",
+        facecolor="#15273F" if TRANSPARENT else "white",
+        edgecolor="white" if TRANSPARENT else "#cccccc",
         fancybox=False,
-        title="Dominant cell type",
-        title_fontsize=8,
     )
     leg.set_zorder(10)
 
@@ -1575,6 +1798,142 @@ def fig_part4_gene_networks():
     plt.tight_layout(rect=[0, 0.02, 1, 1])
     save(fig, "part4_gene_networks", png=True, dpi=300)
 
+# =============================================================================
+# PART 4 — gene network di una SINGOLA classe, in due immagini separate hi-res
+# =============================================================================
+def fig_part4_gene_network_single(
+    class_id: int,
+    *,
+    top_n_labels: int = 15,
+    top_n_chord: int = 35,
+    seed: int = 42,
+    dpi: int = 400,
+    full_figsize=(10, 10),
+    chord_figsize=(10, 10),
+    font_scale: float = 1.0,
+    legend_fontsize: float = 9,
+    chord_edge_color: str | None = None,
+    chord_edge_alpha_boost: float = 1.0,
+    full_edge_color: str | None = None,
+    bare: bool = False,
+    name_prefix: str = "part4_gene_network",
+):
+    """Genera DUE immagini separate ad alta risoluzione per la GGM di una classe.
+
+      1) <prefix>_full_c{id}_{slug}   -> full network (tutti i nodi, archi log-pesati)
+      2) <prefix>_chord_c{id}_{slug}  -> chord dei top-{top_n_chord} hub
+
+    Rispetta la modalità trasparente globale (TRANSPARENT): se attiva, salva PNG
+    a sfondo trasparente in report/figures/transparent/ con inchiostro chiaro.
+    Riusa gli helper _plot_full_network_panel / _plot_chord_panel: il look e' identico
+    ai pannelli della figura 2x2, ma ogni pannello vive in un file proprio.
+    """
+    print(f"[part4] gene network singolo (classe c{class_id})")
+    import networkx  # noqa: F401  (usato dagli helper; fallisce subito se assente)
+    from matplotlib.lines import Line2D
+
+    set_style()  # idempotente; applica lo stile, incl. inchiostro chiaro se TRANSPARENT
+
+    CLASS_NAMES = {
+        0: "B cells", 1: "Endothelial", 2: "Fibroblasts", 3: "Myeloid",
+        4: "Normal epi.", 5: "SMC", 6: "T cells", 7: "Tumor",
+    }
+    cell_name = CLASS_NAMES.get(class_id, f"class {class_id}")
+    slug = (cell_name.lower().replace(" ", "_").replace(".", "")
+            .replace("/", "_"))
+
+    # --- carico gli artefatti GGM ---
+    arts = _load_part4_artifacts()
+    if "ggms_alpha_007_common378" not in arts:
+        print("  GGM artifacts non trovati, skip"); return
+    ggm_root = arts["ggms_alpha_007_common378"]
+    common_idx = ggm_root.get("common_gene_global")
+    if common_idx is None:
+        print("  common_gene_global assente, skip"); return
+    if class_id not in ggm_root["per_class"]:
+        print(f"  classe {class_id} assente in per_class, skip"); return
+    try:
+        all_symbols = _load_gene_symbols()
+    except FileNotFoundError:
+        print("  data/gene_names.csv non trovato, skip"); return
+    common_symbols = all_symbols[common_idx]
+
+    G = _build_gene_network(class_id, ggm_root, common_symbols)
+    ggm_data = ggm_root["per_class"][class_id]
+
+    # legenda famiglie (riusata su entrambe le figure)
+    edge_ink = LIGHT_INK if TRANSPARENT else "black"
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="none", label=fam,
+               markerfacecolor=col, markeredgecolor=edge_ink,
+               markeredgewidth=0.5, markersize=10)
+        for fam, col in FAMILY_COLORS.items()
+    ]
+
+    def _add_legend(fig):
+        fig.legend(handles=legend_handles, loc="lower center", ncol=3,
+                   frameon=not TRANSPARENT, framealpha=1.0,
+                   facecolor=("none" if TRANSPARENT else "white"),
+                   edgecolor=("none" if TRANSPARENT else "#cccccc"),
+                   fontsize=legend_fontsize, bbox_to_anchor=(0.5, 0.0))
+
+    def _scale_text(ax):
+        # gli helper fissano i font (label, titolo) a valori hardcoded:
+        # qui li riscalo a posteriori senza toccare gli helper.
+        if font_scale != 1.0:
+            for t in list(ax.texts) + [ax.title]:
+                t.set_fontsize(t.get_fontsize() * font_scale)
+
+    def _restyle_edges(ax, color, alpha_boost):
+        # gli archi sono Line2D in ax.lines (i nodi sono scatter/collections,
+        # le label sono testo): li ricoloro/rinforzo mantenendo il gradiente
+        # di alpha gia' calcolato dall'helper.
+        for ln in ax.lines:
+            if color is not None:
+                ln.set_color(color)
+            if alpha_boost != 1.0:
+                a = ln.get_alpha()
+                if a is not None:
+                    ln.set_alpha(min(1.0, a * alpha_boost))
+
+    # ---------- 1) FULL NETWORK ----------
+    fig_full = plt.figure(figsize=full_figsize)
+    ax_full = fig_full.add_subplot(111)
+    _plot_full_network_panel(
+        ax_full, G, ggm_data,
+        f"{cell_name} (c{class_id}): full GGM "
+        f"({G.number_of_nodes()} nodi, archi log-pesati)",
+        seed=seed, top_n_labels=top_n_labels,
+    )
+    _restyle_edges(ax_full, full_edge_color, 1.0)
+    if bare:
+        ax_full.set_title("")
+    if TRANSPARENT:
+        # i top-hub label sono hardcoded "black": su deck scuro non si leggono
+        for t in ax_full.texts:
+            t.set_color(LIGHT_INK)
+    _scale_text(ax_full)
+    if not bare:
+        _add_legend(fig_full)
+    fig_full.tight_layout(rect=[0, 0, 1, 1] if bare else [0, 0.05, 1, 1])
+    save(fig_full, f"{name_prefix}_full_c{class_id}_{slug}", png=True, dpi=dpi)
+
+    # ---------- 2) CHORD ----------
+    fig_chord = plt.figure(figsize=chord_figsize)
+    ax_chord = fig_chord.add_subplot(111)
+    _plot_chord_panel(
+        ax_chord, G, ggm_data,
+        f"{cell_name} (c{class_id}): top {top_n_chord} hub",
+        top_n=top_n_chord,
+    )
+    _restyle_edges(ax_chord, chord_edge_color, chord_edge_alpha_boost)
+    if bare:
+        ax_chord.set_title("")
+    _scale_text(ax_chord)
+    if not bare:
+        _add_legend(fig_chord)
+    fig_chord.tight_layout(rect=[0, 0, 1, 1] if bare else [0, 0.05, 1, 1])
+    save(fig_chord, f"{name_prefix}_chord_c{class_id}_{slug}", png=True, dpi=dpi)
 
 # =============================================================================
 # PART 5 FIGURES
@@ -1746,7 +2105,9 @@ def fig_part5_patient_jaccard():
 # =============================================================================
 # Main entry point
 # =============================================================================
-def main():
+def main(transparent: bool = False):
+    global TRANSPARENT
+    TRANSPARENT = transparent
     set_style()
     print(f"output directory: {FIGDIR}")
     print()
@@ -1806,4 +2167,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(transparent=True)

@@ -33,3 +33,8 @@ data/processed/
 report/*.log
 report/*.out
 /notebooks/deprecated/
+
+# Rendered media & scratch outputs
+*.mp4
+notebooks/*.png
+notebooks/tmp.ipynb
